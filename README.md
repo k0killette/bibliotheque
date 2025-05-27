@@ -1,7 +1,9 @@
 # API de gestion de bibliotheque 
 
 Ce projet est une application de gestion de bibliothèque universitaire basée sur **FastAPI**, structurée selon une architecture **N-Tiers**. Elle expose une API RESTful organisée pour gérer les livres, les utilisateurs et les emprunts.
-  
+
+# Implémentation de la couche de présentation avec FastAPI
+
 ## Exercice 1 : Définition des schémas Pydantic  
 
 Les **schémas Pydantic** servent à valider et structurer les données entrantes et sortantes de l'API. Ils assurent que les données respectent des contraintes de type, longueur, format...  
@@ -252,3 +254,223 @@ Exemples d’URL disponibles :
 - `/api/v1/books/`
 - `/api/v1/users/`
 - `/api/v1/auth/login`
+
+# Développement de la couche métier  
+
+La **couche métier** constitue le cœur de la logique métier de l'application. Elle fait le lien entre la **couche de présentation** (API) et la **couche d'accès aux données** (repositories). Elle encapsule toutes les règles métier, les validations spécifiques et les traitements complexes.  
+
+## Exercice 1 : Création d'un service de base - src/services/base.py    
+
+Le service de base fournit des fonctionnalités CRUD communes à tous les services. On utilise une classe générique **BaseService** pour tout centraliser.    
+
+### Fonctionnalités principales :  
+- Opérations CRUD génériques (Create, Read, Update, Delete) :  
+```
+# CREATE - Créer un nouvel objet
+def create(self, *, obj_in: CreateSchemaType) -> ModelType:
+    return self.repository.create(obj_in=obj_in)
+
+# READ - Lire un objet par ID
+def get(self, id: Any) -> Optional[ModelType]:
+    return self.repository.get(id=id)
+
+# UPDATE - Mettre à jour un objet existant  
+def update(self, *, db_obj: ModelType, obj_in: Union[UpdateSchemaType, Dict[str, Any]]) -> ModelType:
+    return self.repository.update(db_obj=db_obj, obj_in=obj_in)
+
+# DELETE - Supprimer un objet
+def remove(self, *, id: int) -> ModelType:
+    return self.repository.remove(id=id)
+```
+- Gestion de la pagination avec une limite à 100 objets pour éviter de charger tous les enregistrements :
+```
+# Exemple d'utilisation : pour récupérer les livres 20 à 40 
+service.get_multi(skip=20, limit=20)
+```
+- Utilisation du **pattern Repository** : le service délègue au repository au lieu d'accéder directement à la base de données :
+```
+# Le service orchestre, le repository exécute
+def get(self, id: Any) -> Optional[ModelType]:
+    return self.repository.get(id=id)
+```
+- Définition des types génériques pour la réutilisabilité avec n'importe quel type d'objet :   
+```python
+# Type du modèle (User, Book, Loan...)
+ModelType = TypeVar("ModelType", bound=Base) 
+# Schéma de création
+CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
+# Schéma de mise à jour
+UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
+```
+  
+### Structure du service :  
+```python
+class BaseService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
+    def __init__(self, repository: BaseRepository):
+        self.repository = repository
+    
+    def get(self, id: Any) -> Optional[ModelType]
+    def get_multi(self, *, skip: int = 0, limit: int = 100) -> List[ModelType]
+    def create(self, *, obj_in: CreateSchemaType) -> ModelType
+    def update(self, *, db_obj: ModelType, obj_in: Union[UpdateSchemaType, Dict[str, Any]]) -> ModelType
+    def remove(self, *, id: int) -> ModelType
+```    
+
+### Avantages :  
+
+- **Réutilisabilité :** toutes les opérations CRUD de base sont implémentées une seule fois ;
+- **Cohérence :** on utilsie une seule et même interface pour tous les services ;
+- **Maintenabilité :** les modifications sont centralisées dans un seul endroit ;
+- **Type Safety :** utilisation des génériques pour éviter les erreurs de type
+
+## Exercice 2 : Implémentation du service utilisateur - src/services/users.py  
+
+Le service utilisateur étend le service de base avec des fonctionnalités spécifiques à la gestion des utilisateurs, comme l'authentification, la gestion des mots de passe et les vérifications de sécurité.  
+
+###   
+
+
+
+## Exercice 3 : Implémentation du service de livres - src/services/books.py    
+
+Le `BookService` est une classe de service qui gère la logique métier liée aux livres dans une application. Il hérite de `BaseService` et utilise le pattern Repository pour l'accès aux données.  
+
+### Imports et Dépendances
+
+```python
+from typing import List, Optional, Any, Dict, Union
+from sqlalchemy.orm import Session
+```
+
+- **typing** : fournit les annotations de type pour améliorer la lisibilité et la validation du code
+- **sqlalchemy.orm.Session** : type SQLAlchemy pour la gestion des sessions de base de données
+
+```python
+from ..repositories.books import BookRepository
+from ..models.books import Book
+from ..api.schemas.books import BookCreate, BookUpdate
+from .base import BaseService
+```
+
+- **BookRepository** : classe repository qui gère l'accès aux données des livres
+- **Book** : modèle SQLAlchemy représentant un livre en base de données
+- **BookCreate, BookUpdate** : schémas Pydantic pour la création et la mise à jour des livres
+- **BaseService** : classe de base qui fournit les opérations CRUD génériques
+
+### Définition de la Classe
+
+```python
+class BookService(BaseService[Book, BookCreate, BookUpdate]):
+```
+
+La classe hérite de `BaseService` avec des paramètres génériques :
+- `Book` : Le modèle de données
+- `BookCreate` : Le schéma pour créer un livre
+- `BookUpdate` : Le schéma pour mettre à jour un livre
+
+### Constructeur
+
+```python
+def __init__(self, repository: BookRepository):
+    super().__init__(repository)
+    self.repository = repository
+```
+
+- Initialise la classe parent avec le repository
+- Stocke une référence au repository pour un accès direct aux méthodes spécifiques
+
+### Méthodes de Recherche
+
+#### Recherche par ISBN
+
+```python
+def get_by_isbn(self, *, isbn: str) -> Optional[Book]:
+    return self.repository.get_by_isbn(isbn=isbn)
+```
+
+- **Paramètre** : `isbn` (chaîne de caractères) passé en keyword-only (`*`)
+- **Retour** : `Optional[Book]` - un livre ou `None` si non trouvé
+- **Fonction** : Récupère un livre unique par son ISBN
+
+#### Recherche par Titre
+
+```python
+def get_by_title(self, *, title: str) -> List[Book]:
+    return self.repository.get_by_title(title=title)
+```
+
+- **Paramètre** : `title` (chaîne de caractères)
+- **Retour** : `List[Book]` - liste des livres correspondants
+- **Fonction** : Recherche partielle par titre (peut retourner plusieurs résultats)
+
+#### Recherche par Auteur
+
+```python
+def get_by_author(self, *, author: str) -> List[Book]:
+    return self.repository.get_by_author(author=author)
+```
+
+- **Paramètre** : `author` (chaîne de caractères)
+- **Retour** : `List[Book]` - liste des livres de l'auteur
+- **Fonction** : Recherche partielle par nom d'auteur
+
+### Création de Livre
+
+```python
+def create(self, *, obj_in: BookCreate) -> Book:
+    existing_book = self.get_by_isbn(isbn=obj_in.isbn)
+    if existing_book:
+        raise ValueError("L'ISBN est déjà utilisé")
+    return self.repository.create(obj_in=obj_in)
+```
+
+**Logique métier** :
+1. Vérifie si l'ISBN existe déjà dans la base
+2. Lève une exception `ValueError` si l'ISBN est déjà utilisé
+3. Crée le livre via le repository si l'ISBN est unique
+
+Cette méthode surcharge la méthode `create` héritée pour ajouter la validation de l'ISBN.
+
+### Gestion des Quantités
+
+```python
+def update_quantity(self, *, book_id: int, quantity_change: int) -> Book:
+    book = self.get(id=book_id)
+    if not book:
+        raise ValueError(f"Livre avec l'ID {book_id} non trouvé")
+
+    new_quantity = book.quantity + quantity_change
+    if new_quantity < 0:
+        raise ValueError("La quantité ne peut pas être négative")
+
+    return self.repository.update(db_obj=book, obj_in={"quantity": new_quantity})
+```
+
+**Logique métier** :
+1. Récupère le livre par ID (utilise la méthode `get` héritée)
+2. Vérifie que le livre existe
+3. Calcule la nouvelle quantité
+4. Valide que la quantité reste positive
+5. Met à jour le livre avec la nouvelle quantité
+
+### Exemple d'utilisation
+
+```python
+# Initialisation
+book_repository = BookRepository(session)
+book_service = BookService(book_repository)
+
+# Recherche
+book = book_service.get_by_isbn(isbn="978-2-123456-78-9")
+books_by_author = book_service.get_by_author(author="Hugo")
+
+# Création
+new_book_data = BookCreate(title="Nouveau Livre", isbn="978-2-987654-32-1", ...)
+book = book_service.create(obj_in=new_book_data)
+
+# Gestion des stocks
+book_service.update_quantity(book_id=1, quantity_change=5)  # Ajoute 5 exemplaires
+book_service.update_quantity(book_id=1, quantity_change=-2)  # Retire 2 exemplaires
+```
+
+Ce service encapsule toute la logique métier liée aux livres tout en déléguant l'accès aux données au repository, respectant ainsi le principe de séparation des responsabilités. 
