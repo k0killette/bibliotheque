@@ -230,7 +230,7 @@ Exemple de réponse :
 }
 ```  
 ---
-### Pour regrouper toutes les routes - src/api/routes/__init__.py   
+### 🔃 Pour regrouper toutes les routes - src/api/routes/__init__.py   
 
 Les routes sont regroupées par fonctionnalité dans des fichiers séparés puis incluses dans un routeur principal :
 

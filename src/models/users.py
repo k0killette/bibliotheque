@@ -3,7 +3,6 @@ from sqlalchemy.orm import relationship
 
 from .base import Base
 
-
 class User(Base):
     email = Column(String(100), nullable=False, unique=True, index=True)
     hashed_password = Column(String(100), nullable=False)
