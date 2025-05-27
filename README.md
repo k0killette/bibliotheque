@@ -321,19 +321,56 @@ class BaseService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 - **Réutilisabilité :** toutes les opérations CRUD de base sont implémentées une seule fois ;
 - **Cohérence :** on utilsie une seule et même interface pour tous les services ;
 - **Maintenabilité :** les modifications sont centralisées dans un seul endroit ;
-- **Type Safety :** utilisation des génériques pour éviter les erreurs de type
+- **Type Safety :** utilisation des génériques pour éviter les erreurs de type.  
 
 ## Exercice 2 : Implémentation du service utilisateur - src/services/users.py  
 
 Le service utilisateur étend le service de base avec des fonctionnalités spécifiques à la gestion des utilisateurs, comme l'authentification, la gestion des mots de passe et les vérifications de sécurité.  
 
-###   
+### Fonctionnalités spécialisées :   
 
+- Authentification : Vérification des identifiants utilisateur
+- Sécurité : Hashage et vérification des mots de passe
+- Validations métier : Vérification de l'unicité de l'email
+- Gestion des rôles : Vérification des statuts admin et actif  
 
+Exemple d'authentification :  
+```python
+def authenticate(self, *, email: str, password: str) -> Optional[User]:
+    user = self.get_by_email(email=email)
+    if not user:
+        return None
+    if not verify_password(password, user.hashed_password):
+        return None
+    return user
+```  
+
+Exemple de création sécurisée :  
+```python
+def create(self, *, obj_in: UserCreate) -> User:
+    # Vérifier l'unicité de l'email
+    existing_user = self.get_by_email(email=obj_in.email)
+    if existing_user:
+        raise ValueError("L'email est déjà utilisé")
+    
+    # Hasher le mot de passe
+    hashed_password = get_password_hash(obj_in.password)
+    user_data = obj_in.dict()
+    del user_data["password"]
+    user_data["hashed_password"] = hashed_password
+    
+    return self.repository.create(obj_in=user_data)
+```  
+
+### Fonctions utilitaires :
+
+- `get_by_email()` : Recherche par email
+- `is_active()` : Vérification du statut actif
+- `is_admin()` : Vérification des droits administrateur
 
 ## Exercice 3 : Implémentation du service de livres - src/services/books.py    
 
-Le `BookService` est une classe de service qui gère la logique métier liée aux livres dans une application. Il hérite de `BaseService` et utilise le pattern Repository pour l'accès aux données.  
+La classe `BookService` gère la logique métier liée aux livres dans notre application : recherche avancée, gestion des stocks et validation des données. Elle hérite de `BaseService` et utilise le pattern Repository pour l'accès aux données.  
 
 ### Imports et Dépendances
 
