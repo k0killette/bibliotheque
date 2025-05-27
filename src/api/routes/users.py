@@ -7,6 +7,8 @@ from ...models.users import User as UserModel
 from ..schemas.users import User, UserCreate, UserUpdate
 from ...repositories.users import UserRepository
 from ...utils.security import get_password_hash
+from ...services.users import UserService
+from ..dependencies import get_current_active_user, get_current_admin_user
 
 router = APIRouter()
 
@@ -15,13 +17,15 @@ router = APIRouter()
 def read_users(
     db: Session = Depends(get_db),
     skip: int = 0,
-    limit: int = 100
+    limit: int = 100,
+    current_user=Depends(get_current_admin_user)
 ) -> Any:
     """
-    Récupère la liste des utilisateurs.
+    Récupère la liste des utilisateurs (mode Admin uniquement).
     """
     repository = UserRepository(UserModel, db)
-    users = repository.get_multi(skip=skip, limit=limit)
+    service = UserService(repository)
+    users = service.get_multi(skip=skip, limit=limit)
     return users
 
 
@@ -35,6 +39,7 @@ def create_user(
     Crée un nouvel utilisateur.
     """
     repository = UserRepository(UserModel, db)
+    service = UserService(repository)
     user = repository.get_by_email(email=user_in.email)
     if user:
         raise HTTPException(
@@ -51,17 +56,47 @@ def create_user(
     user = repository.create(obj_in=user_data)
     return user
 
+@router.get("/me", response_model=User)
+def read_current_user(
+    current_user=Depends(get_current_active_user)
+) -> Any:
+    """
+    Récupère les informations de l'utilisateur connecté.
+    """
+    return current_user
+
+@router.put("/me", response_model=User)
+def update_current_user(
+    *,
+    db: Session = Depends(get_db),
+    user_in: UserUpdate,
+    current_user=Depends(get_current_active_user)
+) -> Any:
+    """
+    Met à jour les informations de l'utilisateur connecté.
+    """
+    repository = UserRepository(UserModel, db)
+    service = UserService(repository)
+    try:
+        return service.update(db_obj=current_user, obj_in=user_in)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
 
 @router.get("/{id}", response_model=User)
 def read_user(
     *,
     db: Session = Depends(get_db),
-    id: int
+    id: int,
+    current_user=Depends(get_current_admin_user)
 ) -> Any:
     """
-    Récupère un utilisateur par son ID.
+    Récupère un utilisateur par son ID (mode Admin uniquement).
     """
     repository = UserRepository(UserModel, db)
+    service = UserService(repository)
     user = repository.get(id=id)
     if not user:
         raise HTTPException(
@@ -79,10 +114,11 @@ def update_user(
     user_in: UserUpdate
 ) -> Any:
     """
-    Met à jour un utilisateur.
+    Met à jour un utilisateur par son ID (mode Admin uniquement).
     """
     repository = UserRepository(UserModel, db)
-    user = repository.get(id=id)
+    service = UserService(repository)
+    user = service.get(id=id)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -112,11 +148,32 @@ def delete_user(
     Supprime un utilisateur.
     """
     repository = UserRepository(UserModel, db)
-    user = repository.get(id=id)
+    service = UserService(repository)
+    user = service.get(id=id)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Utilisateur non trouvé"
         )
-    user = repository.remove(id=id)
+    user = service.remove(id=id)
+    return user
+
+@router.get("/by-email/{email}", response_model=User)
+def get_user_by_email(
+    *,
+    db: Session = Depends(get_db),
+    email: str,
+    current_user=Depends(get_current_admin_user)
+) -> Any:
+    """
+    Recherche un utilisateur par email (mode Admin uniquement).
+    """
+    repository = UserRepository(UserModel, db)
+    service = UserService(repository)
+    user = service.get_by_email(email=email)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Utilisateur non trouvé"
+        )
     return user
