@@ -20,7 +20,8 @@ def test_create_book(db_session: Session):
         author="Test Author",
         isbn="0123456789",
         publication_year=2023,
-        quantity=5
+        quantity=5,
+        category_ids=[]
     )
 
     # Appel au service pour créer le livre
@@ -45,7 +46,8 @@ def test_create_book_isbn_already_used(db_session: Session):
         author="John Doe",
         isbn="0123456789",
         publication_year=2023,
-        quantity=3
+        quantity=3,
+        category_ids=[]
     )
 
     # Création d'un premier livre
@@ -57,7 +59,8 @@ def test_create_book_isbn_already_used(db_session: Session):
         author="Jane Doe",
         isbn="0123456789",
         publication_year=2024,
-        quantity=2
+        quantity=2,
+        category_ids=[]
     )
     with pytest.raises(ValueError, match="L'ISBN est déjà utilisé"):
         service.create(obj_in=book_in_duplicate)
@@ -74,7 +77,8 @@ def test_get_by_isbn(db_session: Session):
         author="ISBN Author",
         isbn="0123456789",
         publication_year=2023,
-        quantity=4
+        quantity=4,
+        category_ids=[]
     )
     
     created_book = service.create(obj_in=book_in)
@@ -99,21 +103,24 @@ def test_get_by_title(db_session: Session):
         author="John Doe",
         isbn="11111111111",
         publication_year=2023,
-        quantity=3
+        quantity=3,
+        category_ids=[]
     )
     book2_in = BookCreate(
         title="Advanced Python",
         author="Jane Smith",
         isbn="22222222222",
         publication_year=2024,
-        quantity=2
+        quantity=2,
+        category_ids=[]
     )
     book3_in = BookCreate(
         title="Java Programming",
         author="Bob Johnson",
         isbn="33333333333",
         publication_year=2023,
-        quantity=1
+        quantity=1,
+        category_ids=[]
     )
 
     service.create(obj_in=book1_in)
@@ -140,21 +147,24 @@ def test_get_by_author(db_session: Session):
         author="Famous Author",
         isbn="44444444444",
         publication_year=2022,
-        quantity=2
+        quantity=2,
+        category_ids=[]
     )
     book2_in = BookCreate(
         title="Book Two",
         author="Famous Author",
         isbn="55555555555",
         publication_year=2023,
-        quantity=3
+        quantity=3,
+        category_ids=[]
     )
     book3_in = BookCreate(
         title="Different Book",
         author="Another Author",
         isbn="66666666666",
         publication_year=2023,
-        quantity=1
+        quantity=1,
+        category_ids=[]
     )
     
     service.create(obj_in=book1_in)
@@ -181,7 +191,8 @@ def test_update_quantity(db_session: Session):
         author="Test Author", 
         isbn="99999999999", 
         publication_year=2024,
-        quantity=10
+        quantity=10,
+        category_ids=[]
     )
 
     book = service.create(obj_in=book_in)
