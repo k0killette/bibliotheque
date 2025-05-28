@@ -151,7 +151,7 @@ def create_book(
 ---
 ### 👥 Routes pour les utilisateurs - src/api/routes/users.py  
 
-Fonctionnalités : 
+**Fonctionnalités :** 
 - Récupérer la liste des utilisateurs (GET)
 - Créer un nouvel utilisateur (POST)
 - Récupérer un utilisateur par son ID (GET)
@@ -175,7 +175,7 @@ def create_user(user_in: UserCreate, db: Session = Depends(get_db)):
 ---
 ### 📆 Routes pour les emprunts - src/api/routes/loans.py  
 
-Fonctionnalités :  
+**Fonctionnalités :**  
 - Récupérer la liste des emprunts (GET)
 - Créer un nouvel emprunt (POST)
 - Récupérer un emprunt par son ID (GET)
@@ -253,19 +253,166 @@ app.include_router(api_router, prefix="/api/v1")
 Exemples d’URL disponibles :
 - `/api/v1/books/`
 - `/api/v1/users/`
-- `/api/v1/auth/login`
+- `/api/v1/auth/login`  
+
+## Exercice 3 : src/api/dependencies.py
+
+Ce module fournit des dépendances FastAPI pour l'authentification et l'autorisation des utilisateurs via JWT.  
+
+### Utilisation :
+
+À utiliser comme dépendances dans les routes FastAPI pour sécuriser l'accès selon le statut et le rôle de l'utilisateur.
+
+### Dépendances externes :
+
+- FastAPI (Depends, HTTPException, status)
+- fastapi.security (OAuth2PasswordBearer)
+- jose (jwt, JWTError)
+- pydantic (ValidationError)
+- sqlalchemy.orm (Session)
+
+Modules internes pour la gestion des utilisateurs, des schémas de token, et la configuration.
+```python
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer #Système d'authentification avec mot de passe
+from jose import jwt, JWTError (Système des jetons)
+from pydantic import ValidationError
+from sqlalchemy.orm import Session
+
+from ..db.session import get_db
+from ..models.users import User
+from ..repositories.users import UserRepository
+from ..api.schemas.token import TokenPayload
+from ..utils.security import ALGORITHM
+from ..config import settings
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/login")
+```
+Cette ligne crée une instance de `OAuth2PasswordBearer`, utilisée pour récupérer et valider les tokens OAuth2 des requêtes entrantes.Le paramètre `tokenUrl` spécifie l'URL à laquelle les clients peuvent obtenir un token, généralement le point de terminaison de connexion de l'API. `settings.API_V1_STR` permet de construire dynamiquement l'URL du token en fonction de la version de l'API définie dans la configuration.
+
+- `get_current_user` : Récupère l'utilisateur courant à partir du token JWT fourni. Lève une exception si le token est invalide ou si l'utilisateur n'existe pas.
+```python
+def get_current_user(
+    db: Session = Depends(get_db),
+    token: str = Depends(oauth2_scheme)
+) -> User:
+    """
+    Dépendance pour obtenir l'utilisateur actuel à partir du token JWT.
+    """
+    try:
+        payload = jwt.decode(
+            token, settings.SECRET_KEY, algorithms=[ALGORITHM]
+        )
+        token_data = TokenPayload(**payload)
+    except (JWTError, ValidationError):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Impossible de valider les informations d'identification",
+        )
+
+    repository = UserRepository(User, db)
+    user = repository.get(id=token_data.sub)
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Utilisateur non trouvé",
+        )
+    return user
+```  
+
+- `get_current_active_user` : Vérifie que l'utilisateur courant est actif. Lève une exception si l'utilisateur est inactif.
+```python
+def get_current_active_user(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """
+    Dépendance pour obtenir l'utilisateur actif actuel.
+    """
+    if not current_user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Utilisateur inactif",
+        )
+    return current_user
+```
+- `get_current_admin_user` : Vérifie que l'utilisateur courant possède les droits administrateur. Lève une exception si l'utilisateur n'a pas les privilèges requis.
+```python
+def get_current_admin_user(
+    current_user: User = Depends(get_current_active_user),
+) -> User:
+    """
+    Dépendance pour obtenir l'utilisateur administrateur actuel.
+    """
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Privilèges insuffisants",
+        )
+    return current_user
+```  
+
+## Exercice 4 :
+
+Ce module fournit des fonctions utilitaires pour le hachage de mots de passe, leur vérification et la création de jetons d'accès JWT.
+
+### Fonctions :
+
+**`create_access_token(subject, expires_delta=None)` :** Génère un jeton d'accès JWT pour le sujet donné (identifiant utilisateur), avec une durée d'expiration optionnelle. Utilise la clé secrète et l'algorithme définis dans la configuration de l'application.  
+**`verify_password(plain_password, hashed_password)` :** Vérifie un mot de passe en clair par rapport à sa version hachée en utilisant bcrypt.  
+**`get_password_hash(password)` :** Hache un mot de passe en clair avec bcrypt.
+```
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto") 
+ALGORITHM = "HS256" 
+
+def create_access_token( 
+    subject: Union[str, Any], expires_delta: Optional[timedelta] = None 
+) -> str: 
+    """ 
+    Crée un token JWT. 
+    """ 
+    if expires_delta: 
+        expire = datetime.utcnow() + expires_delta 
+    else: 
+        expire = datetime.utcnow() + timedelta( 
+            minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
+        ) 
+    to_encode = {"exp": expire, "sub": str(subject)} 
+    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM) 
+    return encoded_jwt
+
+def verify_password(plain_password: str, hashed_password: str) -> bool: 
+    """ 
+    Vérifie si un mot de passe en clair correspond à un hash. 
+    """ 
+    return pwd_context.verify(plain_password, hashed_password) 
+def get_password_hash(password: str) -> str: 
+    """ 
+    Génère un hash à partir d'un mot de passe en clair. 
+    """ 
+    return pwd_context.hash(password)
+```  
+
+### Dépendances :
+
+- **`jose.jwt` :** Pour l'encodage des jetons JWT.  
+- **`passlib.context.CryptContext` :** Pour le hachage et la vérification des mots de passe.  
+- **`settings` :** Configuration de l'application contenant SECRET_KEY et ACCESS_TOKEN_EXPIRE_MINUTES.
+
+---  
 
 # Développement de la couche métier  
 
-La **couche métier** constitue le cœur de la logique métier de l'application. Elle fait le lien entre la **couche de présentation** (API) et la **couche d'accès aux données** (repositories). Elle encapsule toutes les règles métier, les validations spécifiques et les traitements complexes.  
+La **couche métier** constitue le cœur de la logique métier de l'application. Elle fait le lien entre la **couche de présentation** (API) et la **couche d'accès aux données** (repositories). Elle renferme toutes les règles métier, les validations spécifiques et les traitements complexes.  
 
 ## Exercice 1 : Création d'un service de base - src/services/base.py    
 
 Le service de base fournit des fonctionnalités CRUD communes à tous les services. On utilise une classe générique **BaseService** pour tout centraliser.    
 
 ### Fonctionnalités principales :  
+
 - Opérations CRUD génériques (Create, Read, Update, Delete) :  
-```
+```python
 # CREATE - Créer un nouvel objet
 def create(self, *, obj_in: CreateSchemaType) -> ModelType:
     return self.repository.create(obj_in=obj_in)
@@ -283,17 +430,21 @@ def remove(self, *, id: int) -> ModelType:
     return self.repository.remove(id=id)
 ```
 - Gestion de la pagination avec une limite à 100 objets pour éviter de charger tous les enregistrements :
-```
+```python
 # Exemple d'utilisation : pour récupérer les livres 20 à 40 
 service.get_multi(skip=20, limit=20)
 ```
 - Utilisation du **pattern Repository** : le service délègue au repository au lieu d'accéder directement à la base de données :
-```
+```python
+# Le service utilise le repository pour accéder aux données
+def __init__(self, repository: BaseRepository):
+    self.repository = repository
+
 # Le service orchestre, le repository exécute
 def get(self, id: Any) -> Optional[ModelType]:
     return self.repository.get(id=id)
 ```
-- Définition des types génériques pour la réutilisabilité avec n'importe quel type d'objet :   
+- Définition de types génériques **TypeVars** pour la réutilisabilité avec n'importe quel type d'objet sans devoir réécrire le code :   
 ```python
 # Type du modèle (User, Book, Loan...)
 ModelType = TypeVar("ModelType", bound=Base) 
@@ -301,9 +452,13 @@ ModelType = TypeVar("ModelType", bound=Base)
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
 # Schéma de mise à jour
 UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
+
+# La classe s'adapte aux différents types
+class BaseService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 ```
-  
+---  
 ### Structure du service :  
+
 ```python
 class BaseService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
     def __init__(self, repository: BaseRepository):
@@ -319,22 +474,37 @@ class BaseService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 ### Avantages :  
 
 - **Réutilisabilité :** toutes les opérations CRUD de base sont implémentées une seule fois ;
-- **Cohérence :** on utilsie une seule et même interface pour tous les services ;
+- **Cohérence :** on utilise une seule et même interface pour tous les services ;
 - **Maintenabilité :** les modifications sont centralisées dans un seul endroit ;
 - **Type Safety :** utilisation des génériques pour éviter les erreurs de type.  
 
+**Exemple d'utilisation identique pour tous :**  
+
+```python
+# La class hérite automatiquement de toutes les méthodes CRUD
+# Pour les utilisateurs
+class UserService(BaseService[User, UserCreate, UserUpdate]):
+    user_service.get(id=1) # Récupère l'utilisateur 1
+    user_service.get_multi(skip=0, limit=10) # 10 premiers utilisateurs
+
+# Pour les livres  
+class BookService(BaseService[Book, BookCreate, BookUpdate]):
+    book_service.get(id=1) # Récupère le livre 1
+    book_service.get_multi(skip=0, limit=10) # 10 premiers livres
+```  
+---
 ## Exercice 2 : Implémentation du service utilisateur - src/services/users.py  
 
 Le service utilisateur étend le service de base avec des fonctionnalités spécifiques à la gestion des utilisateurs, comme l'authentification, la gestion des mots de passe et les vérifications de sécurité.  
 
 ### Fonctionnalités spécialisées :   
 
-- Authentification : Vérification des identifiants utilisateur
-- Sécurité : Hashage et vérification des mots de passe
-- Validations métier : Vérification de l'unicité de l'email
-- Gestion des rôles : Vérification des statuts admin et actif  
+- Authentification : vérification des identifiants utilisateur
+- Sécurité : hashage et vérification des mots de passe
+- Validations métier : vérification de l'unicité de l'email
+- Gestion des rôles : vérification des statuts admin et actif  
 
-Exemple d'authentification :  
+**Exemple d'authentification :**  
 ```python
 def authenticate(self, *, email: str, password: str) -> Optional[User]:
     user = self.get_by_email(email=email)
@@ -345,10 +515,10 @@ def authenticate(self, *, email: str, password: str) -> Optional[User]:
     return user
 ```  
 
-Exemple de création sécurisée :  
+**Exemple de création sécurisée :**  
 ```python
 def create(self, *, obj_in: UserCreate) -> User:
-    # Vérifier l'unicité de l'email
+    # Vérifier le caractère unique de l'email
     existing_user = self.get_by_email(email=obj_in.email)
     if existing_user:
         raise ValueError("L'email est déjà utilisé")
@@ -364,13 +534,15 @@ def create(self, *, obj_in: UserCreate) -> User:
 
 ### Fonctions utilitaires :
 
-- `get_by_email()` : Recherche par email
-- `is_active()` : Vérification du statut actif
-- `is_admin()` : Vérification des droits administrateur
-
+- `get_by_email()` : recherche par email
+- `is_active()` : vérification du statut actif
+- `is_admin()` : vérification des droits administrateur  
+  
+---
+  
 ## Exercice 3 : Implémentation du service de livres - src/services/books.py    
 
-La classe `BookService` gère la logique métier liée aux livres dans notre application : recherche avancée, gestion des stocks et validation des données. Elle hérite de `BaseService` et utilise le pattern Repository pour l'accès aux données.  
+La classe `BookService` gère la logique métier liée aux livres dans notre application : recherche avancée, gestion des stocks et validation des données. Elle hérite de `BaseService` et utilise le **pattern Repository** pour l'accès aux données.  
 
 ### Imports et Dépendances
 
@@ -401,9 +573,9 @@ class BookService(BaseService[Book, BookCreate, BookUpdate]):
 ```
 
 La classe hérite de `BaseService` avec des paramètres génériques :
-- `Book` : Le modèle de données
-- `BookCreate` : Le schéma pour créer un livre
-- `BookUpdate` : Le schéma pour mettre à jour un livre
+- `Book` : modèle de données
+- `BookCreate` : schéma pour créer un livre
+- `BookUpdate` : schéma pour mettre à jour un livre
 
 ### Constructeur
 
@@ -416,7 +588,7 @@ def __init__(self, repository: BookRepository):
 - Initialise la classe parent avec le repository
 - Stocke une référence au repository pour un accès direct aux méthodes spécifiques
 
-### Méthodes de Recherche
+### Fonctionnalités
 
 #### Recherche par ISBN
 
@@ -427,7 +599,7 @@ def get_by_isbn(self, *, isbn: str) -> Optional[Book]:
 
 - **Paramètre** : `isbn` (chaîne de caractères) passé en keyword-only (`*`)
 - **Retour** : `Optional[Book]` - un livre ou `None` si non trouvé
-- **Fonction** : Récupère un livre unique par son ISBN
+- **Fonction** : récupère un livre unique par son ISBN
 
 #### Recherche par Titre
 
@@ -438,7 +610,7 @@ def get_by_title(self, *, title: str) -> List[Book]:
 
 - **Paramètre** : `title` (chaîne de caractères)
 - **Retour** : `List[Book]` - liste des livres correspondants
-- **Fonction** : Recherche partielle par titre (peut retourner plusieurs résultats)
+- **Fonction** : recherche partielle par titre (peut retourner plusieurs résultats)
 
 #### Recherche par Auteur
 
@@ -451,7 +623,7 @@ def get_by_author(self, *, author: str) -> List[Book]:
 - **Retour** : `List[Book]` - liste des livres de l'auteur
 - **Fonction** : Recherche partielle par nom d'auteur
 
-### Création de Livre
+#### Création de Livre
 
 ```python
 def create(self, *, obj_in: BookCreate) -> Book:
@@ -468,7 +640,7 @@ def create(self, *, obj_in: BookCreate) -> Book:
 
 Cette méthode surcharge la méthode `create` héritée pour ajouter la validation de l'ISBN.
 
-### Gestion des Quantités
+#### Gestion des Quantités
 
 ```python
 def update_quantity(self, *, book_id: int, quantity_change: int) -> Book:
