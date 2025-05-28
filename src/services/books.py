@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from ..repositories.books import BookRepository
 from ..models.books import Book
+from ..models.categories import Category
 from ..api.schemas.books import BookCreate, BookUpdate
 from .base import BaseService
 
