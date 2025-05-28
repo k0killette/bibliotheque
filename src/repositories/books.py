@@ -5,9 +5,11 @@ from typing import List, Optional, Dict, Any
 from .base import BaseRepository
 from ..models.books import Book
 from ..models.categories import Category, book_category
+from ..utils.cache import cache, invalidate_cache
 
 
 class BookRepository(BaseRepository[Book, None, None]):
+    @cache(expiry=60)  # Cache pendant 1 minute
     def get_by_isbn(self, *, isbn: str) -> Optional[Book]:
         """
         Récupère un livre par son ISBN.
@@ -101,3 +103,27 @@ class BookRepository(BaseRepository[Book, None, None]):
             "unique_books": unique_books,
             "avg_publication_year": avg_publication_year
         }
+    
+    def create(self, *, obj_in: Any) -> Book:
+        """
+        Crée un nouveau livre et invalide le cache.
+        """
+        book = super().create(obj_in=obj_in)
+        invalidate_cache("src.repositories.books")
+        return book
+
+    def update(self, *, db_obj: Book, obj_in: Any) -> Book:
+        """
+        Met à jour un livre et invalide le cache.
+        """
+        book = super().update(db_obj=db_obj, obj_in=obj_in)
+        invalidate_cache("src.repositories.books")
+        return book
+
+    def remove(self, *, id: int) -> Book:
+        """
+        Supprime un livre et invalide le cache.
+        """
+        book = super().remove(id=id)
+        invalidate_cache("src.repositories.books")
+        return book
