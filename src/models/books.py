@@ -28,4 +28,4 @@ class Book(Base):
 
     # Relations
     loans = relationship("Loan", back_populates="book", cascade="all, delete-orphan")
-    categories = relationship("Category", secondary="book_category", back_populates="book")
+    categories = relationship("Category", secondary="book_category", back_populates="books")
