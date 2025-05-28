@@ -1,4 +1,4 @@
-rom typing import Generic, TypeVar, List, Optional, Dict, Any
+from typing import Generic, TypeVar, List, Optional, Dict, Any
 from pydantic import BaseModel
 from sqlalchemy.orm import Query
 from fastapi import Query as QueryParam

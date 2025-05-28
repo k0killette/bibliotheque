@@ -13,8 +13,19 @@ def cache_key(*args, **kwargs) -> str:
     """
     Génère une clé de cache à partir des arguments.
     """
-    key_dict = {"args": args, "kwargs": kwargs}
-    key_str = json.dumps(key_dict, sort_keys=True)
+    # key_dict = {"args": args, "kwargs": kwargs}
+    # key_str = json.dumps(key_dict, sort_keys=True)
+    # return hashlib.md5(key_str.encode()).hexdigest()
+    if args and hasattr(args[0], '__class__'):
+            args = args[1:]
+    
+    try:
+        key_dict = {"args": args, "kwargs": kwargs}
+        key_str = json.dumps(key_dict, sort_keys=True, default=str)
+    except TypeError:
+        # Fallback de sécurité si jamais la sérialisation échoue
+        key_str = str(args) + str(kwargs)
+    
     return hashlib.md5(key_str.encode()).hexdigest()
 
 
